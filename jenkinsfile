@@ -1,0 +1,61 @@
+pipeline {
+    agent any
+
+    environment {
+        // Docker Hub credentials ID configured in Jenkins credentials
+        DOCKER_HUB_CREDENTIALS = 'docker-hub-creds'
+        DOCKER_IMAGE = korinks/webcalapp
+        IMAGE_TAG = "latest"
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    docker.build("${DOCKER_IMAGE}:${IMAGE_TAG}", "-f Dockerfile .")
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    docker.withRegistry('https://registry.hub.docker.com', "${DOCKER_HUB_CREDENTIALS}") {
+                        docker.image("${DOCKER_IMAGE}:${IMAGE_TAG}").push()
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Container') {
+            steps {
+                script {
+                    // Stop and remove any running container with the same name
+                    sh '''
+                    docker stop calculator-container || true
+                    docker rm calculator-container || true
+                    '''
+
+                    // Run container from the new image
+                    sh "docker run -d -p 8090:8080 --name calculator-container ${DOCKER_IMAGE}:${IMAGE_TAG}"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Build, push and deployment successful!'
+        }
+        failure {
+            echo 'Build failed!'
+        }
+    }
+}
+
